@@ -1,0 +1,37 @@
+{% extends "workflows/public_base.html" %}
+{% load markdown_tags %}
+{% block title %}{{ template.name }}{% endblock %}
+{% block content %}
+<div class="public-heading">
+  <p class="eyebrow">Compilazione per {{ link.name }}</p>
+  <h1>{{ template.name }}</h1>
+  <p class="muted">Le modifiche vengono salvate su questa compilazione e puoi tornare al link per aggiornarle.</p>
+</div>
+{% if errors %}<div class="notice notice-error"><strong>Controlla questi campi:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+<form class="public-form" method="post">
+  {% csrf_token %}
+  {% for row in block_rows %}
+    {% with block=row.block %}
+      <section class="public-block card">
+        {% if block.kind == "rich_text" %}
+          <h2 class="public-block-title">{{ block.title }}</h2>
+          <div class="rich-content">{{ block.content|markdown }}</div>
+        {% elif block.kind == "checklist" %}
+          <fieldset>
+            <legend><span class="public-block-title">{{ block.title }}</span>{% if block.required %}<span class="required-mark">Obbligatorio</span>{% endif %}</legend>
+            <div class="checklist-options">
+              {% for item in block.checklist_items.all %}
+                <label class="checklist-option"><input type="checkbox" name="checklist_{{ block.pk }}" value="{{ item.pk }}" {% if item.pk|stringformat:"s" in row.checked_ids %}checked{% endif %}><span>{{ item.label }}</span></label>
+              {% empty %}<p class="muted">Nessuna voce disponibile.</p>{% endfor %}
+            </div>
+          </fieldset>
+        {% else %}
+          <label class="public-block-title" for="text_{{ block.pk }}">{{ block.title }}{% if block.required %}<span class="required-mark">Obbligatorio</span>{% endif %}</label>
+          <textarea id="text_{{ block.pk }}" name="text_{{ block.pk }}" rows="5" {% if block.required %}required{% endif %} placeholder="Scrivi qui la tua risposta">{{ row.text_value }}</textarea>
+        {% endif %}
+      </section>
+    {% endwith %}
+  {% endfor %}
+  <div class="public-actions"><button class="button button-primary button-wide" type="submit">Salva risposte</button></div>
+</form>
+{% endblock %}
