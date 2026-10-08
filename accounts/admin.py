@@ -20,7 +20,7 @@ class UserAdmin(DjangoUserAdmin):
     def has_view_permission(self, request, obj=None):
         if not self.has_module_permission(request):
             return False
-        return obj is None or request.user.is_superuser or obj.role == User.Role.MODERATOR
+        return obj is None or request.user.is_superuser or obj.role in (User.Role.MODERATOR, User.Role.USER)
 
     def has_add_permission(self, request):
         return self.has_module_permission(request)
@@ -28,7 +28,7 @@ class UserAdmin(DjangoUserAdmin):
     def has_change_permission(self, request, obj=None):
         if not self.has_module_permission(request):
             return False
-        return obj is None or request.user.is_superuser or obj.role == User.Role.MODERATOR
+        return obj is None or request.user.is_superuser or obj.role in (User.Role.MODERATOR, User.Role.USER)
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -37,7 +37,7 @@ class UserAdmin(DjangoUserAdmin):
         queryset = super().get_queryset(request)
         if request.user.is_superuser:
             return queryset
-        return queryset.filter(role=User.Role.MODERATOR)
+        return queryset.filter(role__in=(User.Role.MODERATOR, User.Role.USER))
 
     def get_fieldsets(self, request, obj=None):
         if request.user.is_superuser:
@@ -52,13 +52,14 @@ class UserAdmin(DjangoUserAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         if not request.user.is_superuser and "role" in form.base_fields:
-            form.base_fields["role"].choices = ((User.Role.MODERATOR, "Moderatore"),)
-            form.base_fields["role"].initial = User.Role.MODERATOR
+            form.base_fields["role"].choices = ((User.Role.MODERATOR, "Moderatore"), (User.Role.USER, "User"))
+            form.base_fields["role"].initial = User.Role.USER
         return form
 
     def save_model(self, request, obj, form, change):
         if not request.user.is_superuser:
-            obj.role = User.Role.MODERATOR
+            if obj.role not in (User.Role.MODERATOR, User.Role.USER):
+                obj.role = User.Role.USER
             obj.is_superuser = False
-        obj.is_staff = True
+        obj.is_staff = obj.is_superuser or obj.role != User.Role.USER
         super().save_model(request, obj, form, change)

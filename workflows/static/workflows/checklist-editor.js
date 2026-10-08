@@ -54,7 +54,7 @@
             options.push({ id: null, text: '' });
             sync(); draw(options.length - 1);
         });
-        const blockRow = editor.closest('tr');
+        const blockRow = editor.closest('tr, .frontend-block-form');
         const kind = blockRow?.querySelector('select[name$="-kind"]');
         if (kind) {
             const toggle = () => { editor.hidden = kind.value !== 'checklist'; };

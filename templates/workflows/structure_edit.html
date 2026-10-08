@@ -1,0 +1,21 @@
+{% extends "workflows/public_base.html" %}
+{% load static %}
+{% block title %}Modifica {{ entity.name }}{% endblock %}
+{% block extrahead %}{{ formset.media }}<script src="{% static 'workflows/template-editor.js' %}" defer></script>{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'dashboard' %}">← Workbook e template</a>
+<div class="page-heading"><div><h1>Modifica {% if is_workbook %}workbook{% else %}template{% endif %}</h1>{% if is_workbook %}<span class="status status-{{ entity.status }}">{{ entity.get_status_display }}</span><p class="muted">Copia di {{ entity.source_template.name }}</p>{% endif %}</div>{% if is_workbook %}<a href="{% url 'workbook-responses' entity.pk %}">Utenti e risposte</a>{% endif %}</div>
+<form method="post" id="template-editor">
+  {% csrf_token %}
+  <div class="section-card card">{{ form.non_field_errors }}{% for field in form %}<div class="field">{{ field.label_tag }}{{ field }}{{ field.errors }}<small class="field-help">{{ field.help_text }}</small></div>{% endfor %}</div>
+  {{ formset.management_form }}{{ formset.non_form_errors }}
+  <div class="block-list" id="block-forms">{% for block_form in formset %}{% include "workflows/block_fields.html" %}{% endfor %}</div>
+  <template id="empty-block-form">{% include "workflows/block_fields.html" with block_form=formset.empty_form %}</template>
+  <div class="form-actions"><button type="button" class="button button-secondary" id="add-block">Aggiungi blocco</button></div>
+  <div class="form-actions">
+    <button class="button button-primary" name="action" value="save" type="submit">Salva {% if is_workbook %}workbook{% else %}template{% endif %}</button>
+    {% if is_workbook and not entity.is_confirmed %}<button class="button button-secondary" name="action" value="confirm" type="submit">Salva e conferma</button>{% endif %}
+  </div>
+  {% if is_workbook %}<p class="field-help">Dopo la conferma gli utenti collegati possono rispondere e solo gli admin possono modificare la struttura.</p>{% else %}<p class="field-help">Le modifiche saranno incluse nei nuovi workbook. Le copie già create restano indipendenti.</p>{% endif %}
+</form>
+{% endblock %}

@@ -1,11 +1,12 @@
 {% extends "workflows/public_base.html" %}
 {% load markdown_tags %}
-{% block title %}{{ template.name }}{% endblock %}
+{% block title %}{{ workbook.name }}{% endblock %}
 {% block content %}
 <div class="public-heading">
-  <p class="eyebrow">Compilazione per {{ link.name }}</p>
-  <h1>{{ template.name }}</h1>
-  <p class="muted">Le modifiche vengono salvate su questa compilazione e puoi tornare al link per aggiornarle.</p>
+  <p class="eyebrow">Compilazione per {{ assignment.user.get_full_name|default:assignment.user.username }}</p>
+  <h1>{{ workbook.name }}</h1>
+  <span class="status status-confirmed">Confermato</span>
+  <p class="muted">Le modifiche vengono salvate su questa compilazione e puoi tornare al workbook per aggiornarle.</p>
 </div>
 {% if errors %}<div class="notice notice-error"><strong>Controlla questi campi:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
 <form class="public-form" method="post">
@@ -19,6 +20,7 @@
         {% elif block.kind == "checklist" %}
           <fieldset>
             <legend><span class="public-block-title">{{ block.title }}</span>{% if block.required %}<span class="required-mark">Obbligatorio</span>{% endif %}</legend>
+            {% if block.content %}<div class="rich-content">{{ block.content|markdown }}</div>{% endif %}
             <div class="checklist-options">
               {% for item in block.checklist_items.all %}
                 <div class="checklist-option"><input id="option_{{ item.pk }}" aria-labelledby="option_content_{{ item.pk }}" type="checkbox" name="checklist_{{ block.pk }}" value="{{ item.pk }}" {% if item.pk|stringformat:"s" in row.checked_ids %}checked{% endif %}><div id="option_content_{{ item.pk }}" class="rich-content checklist-option-content">{{ item.label|markdown }}</div></div>
@@ -27,6 +29,7 @@
           </fieldset>
         {% else %}
           <label class="public-block-title" for="text_{{ block.pk }}">{{ block.title }}{% if block.required %}<span class="required-mark">Obbligatorio</span>{% endif %}</label>
+          {% if block.content %}<div class="rich-content">{{ block.content|markdown }}</div>{% endif %}
           <textarea id="text_{{ block.pk }}" name="text_{{ block.pk }}" rows="5" {% if block.required %}required{% endif %} placeholder="Scrivi qui la tua risposta">{{ row.text_value }}</textarea>
         {% endif %}
       </section>

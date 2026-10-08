@@ -1,0 +1,8 @@
+<div class="block-card card frontend-block-form">
+  {{ block_form.non_field_errors }}
+  {% for field in block_form %}
+    {% if field.is_hidden %}{{ field }}{% else %}
+    <div class="field">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<small class="field-help">{{ field.help_text }}</small>{% endif %}</div>
+    {% endif %}
+  {% endfor %}
+</div>

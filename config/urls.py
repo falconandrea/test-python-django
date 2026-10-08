@@ -1,14 +1,12 @@
 from django.contrib import admin
-from django.urls import include, path, re_path
-from django.views.generic import RedirectView
+from django.urls import include, path
 
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("workflows.urls")),
-    re_path(r"^$", RedirectView.as_view(pattern_name="admin:index", permanent=False)),
 ]
 
-admin.site.site_header = "Gestione template compilabili"
-admin.site.site_title = "Template compilabili"
+admin.site.site_header = "Gestione template e workbook"
+admin.site.site_title = "Template e workbook"
 admin.site.index_title = "Backoffice"

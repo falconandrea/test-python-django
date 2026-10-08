@@ -3,7 +3,8 @@ from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
 from django.db import transaction
 
-from .models import Block, ChecklistItem
+from .models import Block, ChecklistItem, Template, Workbook, WorkbookAssignment
+from django.contrib.auth import get_user_model
 
 
 class ChecklistOptionsWidget(forms.HiddenInput):
@@ -93,7 +94,7 @@ class BlockInlineFormSet(BaseInlineFormSet):
 
         if self.instance.pk:
             latest = (
-                Block.objects.filter(template_id=self.instance.pk)
+                self.instance.blocks.all()
                 .order_by("-position")
                 .values_list("position", flat=True)
                 .first()
@@ -143,3 +144,50 @@ class BlockInlineFormSet(BaseInlineFormSet):
                     item.position = position
                     item.save()
             return saved_instances
+
+
+class TemplateEditorForm(forms.ModelForm):
+    class Meta:
+        model = Template
+        fields = ("name",)
+
+
+class WorkbookEditorForm(forms.ModelForm):
+    users = forms.ModelMultipleChoiceField(
+        label="Utenti che possono rispondere", queryset=get_user_model().objects.none(), required=False,
+        widget=forms.SelectMultiple(attrs={"size": 8}),
+        help_text="Seleziona gli utenti con ruolo user. Rimuovere un utente revoca l'accesso e conserva le sue risposte.",
+    )
+
+    class Meta:
+        model = Workbook
+        fields = ("name",)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["users"].queryset = get_user_model().objects.filter(role="user", is_active=True, is_superuser=False).order_by("username")
+        if self.instance.pk:
+            self.fields["users"].initial = self.instance.assignments.filter(is_active=True).values_list("user_id", flat=True)
+
+    def save_assignments(self, actor):
+        users = self.cleaned_data["users"]
+        self.instance.assignments.exclude(user__in=users).update(is_active=False)
+        for user in users:
+            WorkbookAssignment.objects.update_or_create(workbook=self.instance, user=user, defaults={"is_active": True}, create_defaults={"is_active": True, "created_by": actor})
+
+
+class WorkbookCreateForm(WorkbookEditorForm):
+    class Meta:
+        model = Workbook
+        fields = ("name", "source_template", "moderator")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "moderator" in self.fields:
+            self.fields["moderator"].queryset = get_user_model().objects.filter(role="moderator", is_active=True, is_superuser=False).order_by("username")
+
+
+class WorkbookAdminEditorForm(WorkbookCreateForm):
+    class Meta:
+        model = Workbook
+        fields = ("name", "moderator")

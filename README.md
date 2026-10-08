@@ -1,6 +1,6 @@
 # Template compilabili
 
-Applicazione Django con backoffice nel Django Admin e una pagina pubblica distinta per compilare i template tramite link.
+Applicazione Django con backoffice nel Django Admin e frontend autenticato per gestire e compilare i template.
 
 ## Avvio con Docker
 
@@ -10,13 +10,26 @@ Applicazione Django con backoffice nel Django Admin e una pagina pubblica distin
 
 I valori predefiniti sono per lo sviluppo locale; `.env.example` elenca le variabili configurabili. Le migrazioni vengono applicate all'avvio e PostgreSQL conserva i dati nel volume `postgres_data`.
 
-## Flusso nel Django Admin
+## Template e workbook
 
-- L'admin crea utenti moderatori dalla sezione **Utenti**. I moderatori accedono allo stesso `/admin/`.
-- L'admin crea un template e assegna uno o più moderatori. Un moderatore vede e modifica solo i template assegnati.
-- I blocchi si aggiungono nella pagina del template. Il campo **Ordine** usa numeri crescenti; per una checklist, usa **Aggiungi opzione** e scrivi il Markdown di ogni opzione nel suo campo. I pulsanti su/giù cambiano l’ordine ed **Elimina** rimuove la singola opzione.
-- L'azione **Conferma e blocca i template selezionati** rende immutabile la struttura. **Duplica i template selezionati** crea copie in bozza e mantiene i moderatori assegnati.
-- Da **Risposte** si crea un link nominato per ogni persona: ogni riga rappresenta una persona e la sua compilazione. Aprendo la riga si vedono insieme le risposte, raggruppate per blocco; dalla lista si può chiudere o riattivare il link. Un link chiuso mostra una pagina informativa e non accetta altre modifiche.
-- Chi riceve il link non ha un account: vede il contenuto e può modificare solo checklist e campi di testo. Ogni link conserva la propria compilazione.
+- I **template** contengono solo la struttura riutilizzabile. Gli admin possono modificarli sempre; non hanno moderatori, utenti o conferma.
+- Un admin crea un **workbook** scegliendo nome, template di origine e un moderatore. Blocchi e opzioni Markdown vengono copiati, con nuovi ID, nella struttura indipendente del workbook.
+- Le modifiche al template originale vengono incluse solo nei workbook creati successivamente.
+- Admin e moderatore assegnato collegano gli utenti con ruolo **user** al workbook. Revocare un’assegnazione conserva le risposte e impedisce l’accesso alla compilazione.
+- Il workbook nasce in **bozza**. Il moderatore assegnato può modificarlo e confermarlo; dopo la conferma può consultarlo e gestire utenti e risposte. Gli admin possono modificarne la struttura anche dopo la conferma.
+- Gli user vedono e compilano solo i workbook confermati e assegnati al proprio account. Ogni coppia workbook/utente ha una compilazione aggiornabile.
+- La sezione **Risposte** nel backoffice mostra le compilazioni dei workbook. I moderatori accedono solo ai propri workbook e alle relative risposte; gli user non accedono al backoffice.
 
-Nei blocchi di testo l'admin scrive Markdown (ad esempio `# Titolo`, `**grassetto**`, elenchi e `[link](https://...)`). Il Markdown viene convertito e sanificato sul server prima di essere mostrato all'utente. I vecchi contenuti HTML dei blocchi vengono convertiti in Markdown dalla migrazione.
+## Frontend
+
+- `/login/`: accesso con le credenziali Django.
+- `/`: dashboard dei workbook; gli admin vedono anche i template.
+- `/templates/<id>/edit/`: editor del template, riservato agli admin.
+- `/workbooks/new/`: creazione di un workbook, riservata agli admin.
+- `/workbooks/<id>/edit/`: modifica del workbook o consultazione dopo la conferma per i moderatori.
+- `/workbooks/<id>/responses/`: assegnazione degli utenti e lettura delle risposte.
+- `/workbooks/<id>/`: compilazione personale, riservata agli user assegnati a un workbook confermato.
+
+Nei blocchi di testo e nelle opzioni checklist si scrive Markdown (`**grassetto**`, elenchi, paragrafi e `[link](https://...)`). Il contenuto viene convertito e sanificato sul server prima della visualizzazione. Ogni opzione si aggiunge e si riordina separatamente.
+
+La migrazione `0008_workbookassignment_and_more` conserva utenti, template, blocchi e opzioni. Rimuove la conferma e le associazioni dei template, eliminando le vecchie assegnazioni e risposte dimostrative. I workbook vengono poi creati esplicitamente dalle strutture esistenti.

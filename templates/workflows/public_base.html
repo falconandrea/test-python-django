@@ -6,8 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Compilazione{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'workflows/app.css' %}">
+  {% block extrahead %}{% endblock %}
 </head>
 <body>
+  {% if user.is_authenticated %}
+  <header class="topbar">
+    <a class="brand" href="{% url 'dashboard' %}">Workbook</a>
+    <nav class="topnav">
+      <span class="user-label">{{ user.get_full_name|default:user.username }}</span>
+      {% if user.is_staff %}<a href="{% url 'admin:index' %}">Backoffice</a>{% endif %}
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="button button-quiet button-small" type="submit">Esci</button></form>
+    </nav>
+  </header>
+  {% endif %}
   <main class="page-shell">
     {% if messages %}
       <div class="messages" aria-live="polite">

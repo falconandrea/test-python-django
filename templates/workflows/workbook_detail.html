@@ -1,0 +1,16 @@
+{% extends "workflows/public_base.html" %}
+{% load markdown_tags %}
+{% block title %}{{ workbook.name }}{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'dashboard' %}">← I tuoi workbook</a>
+<div class="page-heading"><div><h1>{{ workbook.name }}</h1><p class="muted">Workbook confermato. Solo gli admin possono modificare la struttura.</p></div><a class="button button-secondary" href="{% url 'workbook-responses' workbook.pk %}">Utenti e risposte</a></div>
+<div class="block-list">
+{% for block in workbook.blocks.all %}
+<section class="section-card card"><h2>{{ block.title }}</h2>
+{% if block.content %}<div class="rich-content">{{ block.content|markdown }}</div>{% endif %}
+{% if block.kind == "checklist" %}<ul>{% for item in block.checklist_items.all %}<li class="rich-content">{{ item.label|markdown }}</li>{% endfor %}</ul>
+{% elif block.kind == "textarea" %}<p class="muted">Campo di testo{% if block.required %} obbligatorio{% endif %}</p>{% endif %}
+</section>
+{% endfor %}
+</div>
+{% endblock %}

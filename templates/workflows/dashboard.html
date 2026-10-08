@@ -1,0 +1,30 @@
+{% extends "workflows/public_base.html" %}
+{% block title %}I tuoi workbook{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>I tuoi workbook</h1><p class="muted">Accedi ai workbook collegati al tuo account.</p></div>{% if user.is_admin %}<a class="button button-primary" href="{% url 'workbook-create' %}">Nuovo workbook</a>{% endif %}</div>
+<div class="template-grid">
+{% if user.role == "user" and not user.is_admin %}
+  {% for assignment in assignments %}
+  <a class="template-card card" href="{% url 'workbook-fill' assignment.workbook_id %}">
+    <span class="status status-confirmed">{% if assignment.last_update %}Compilato{% else %}Da compilare{% endif %}</span>
+    <h2>{{ assignment.workbook.name }}</h2>
+    {% if assignment.last_update %}<p class="muted">Ultimo salvataggio: {{ assignment.last_update|date:"d/m/Y H:i" }}</p>{% endif %}
+    <span class="text-link">{% if assignment.last_update %}Modifica risposte{% else %}Compila{% endif %} →</span>
+  </a>
+  {% empty %}<div class="empty-state card"><h2>Nessun workbook disponibile</h2><p class="muted">I workbook compariranno qui quando saranno confermati e assegnati a te.</p></div>{% endfor %}
+{% else %}
+  {% for workbook in managed_workbooks %}
+  <div class="template-card card">
+    <span class="status status-{{ workbook.status }}">{{ workbook.get_status_display }}</span><h2>{{ workbook.name }}</h2>
+    <p class="muted">Template di origine: {{ workbook.source_template.name }}</p>
+    <a class="button button-secondary" href="{% url 'workbook-edit' workbook.pk %}">{% if workbook.is_confirmed and not user.is_admin %}Visualizza{% else %}Modifica{% endif %}</a>
+    <a class="text-link" href="{% url 'workbook-responses' workbook.pk %}">Utenti e risposte →</a>
+  </div>
+  {% empty %}<div class="empty-state card"><h2>Nessun workbook assegnato</h2></div>{% endfor %}
+{% endif %}
+</div>
+{% if user.is_admin %}
+<section class="links-section"><div class="page-heading"><div><h2>Template</h2><p class="muted">Strutture riutilizzabili, sempre modificabili.</p></div><a href="{% url 'admin:workflows_template_add' %}">Nuovo template</a></div>
+<div class="template-grid">{% for template in templates %}<a class="template-card card" href="{% url 'template-edit' template.pk %}"><h3>{{ template.name }}</h3><span class="text-link">Modifica struttura →</span></a>{% empty %}<p class="muted">Nessun template disponibile.</p>{% endfor %}</div></section>
+{% endif %}
+{% endblock %}

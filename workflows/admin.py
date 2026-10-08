@@ -1,272 +1,201 @@
 from django.contrib import admin, messages
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Max
-from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 
-from .forms import BlockInlineForm, BlockInlineFormSet
-from .models import Block, ShareLink, Template
+from .forms import BlockInlineForm, BlockInlineFormSet, WorkbookCreateForm
+from .models import Block, Template, Workbook, WorkbookAssignment
+from .permissions import is_admin_user, can_manage_workbook, can_edit_workbook
 from .utils import render_markdown
-
-User = get_user_model()
-
-
-def is_admin_user(user):
-    return user.is_authenticated and (user.is_superuser or user.is_admin)
-
-
-def can_access_template(user, template):
-    return is_admin_user(user) or template.moderators.filter(pk=user.pk).exists()
 
 
 class BlockInline(admin.TabularInline):
     model = Block
+    fk_name = "template"
     form = BlockInlineForm
     formset = BlockInlineFormSet
     fields = ("position", "title", "kind", "content", "checklist_options", "required")
     ordering = ("position", "pk")
     extra = 1
-    show_change_link = False
 
     def checklist_options(self, obj):
         return format_html_join("", "<div>{}</div>", ((render_markdown(item.label),) for item in obj.checklist_items.all()))
 
     def has_view_permission(self, request, obj=None):
-        return bool(
-            request.user.is_authenticated
-            and request.user.is_staff
-            and (obj is None or can_access_template(request.user, obj))
-        )
+        return is_admin_user(request.user)
 
     def has_add_permission(self, request, obj=None):
-        if not self.has_view_permission(request, obj):
-            return False
-        return obj is None or not obj.is_confirmed
+        return self.has_change_permission(request, obj)
 
     def has_change_permission(self, request, obj=None):
-        if not self.has_view_permission(request, obj):
-            return False
-        return obj is None or not obj.is_confirmed
+        return is_admin_user(request.user)
 
     def has_delete_permission(self, request, obj=None):
         return self.has_change_permission(request, obj)
 
+
+class WorkbookBlockInline(BlockInline):
+    fk_name = "workbook"
+
+    def has_view_permission(self, request, obj=None):
+        if is_admin_user(request.user):
+            return True
+        if not request.user.is_authenticated or request.user.role != "moderator":
+            return False
+        # Django also checks this permission without the parent when building the queryset.
+        return obj is None or can_manage_workbook(request.user, obj)
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_user(request.user):
+            return queryset
+        return queryset.filter(workbook__moderator=request.user)
+
+    def has_change_permission(self, request, obj=None):
+        return is_admin_user(request.user) or (obj is not None and can_edit_workbook(request.user, obj))
+
     def get_readonly_fields(self, request, obj=None):
-        if obj and obj.is_confirmed:
-            return self.fields
-        return ()
+        return () if self.has_change_permission(request, obj) else self.fields
 
 
 @admin.register(Template)
 class TemplateAdmin(admin.ModelAdmin):
-    list_display = ("name", "status", "block_count", "moderator_names", "created_by")
-    list_filter = ("status",)
-    search_fields = ("name", "moderators__username", "created_by__username")
-    list_select_related = ("created_by", "confirmed_by")
-    filter_horizontal = ("moderators",)
+    list_display = ("name", "block_count", "created_by", "updated_at")
+    search_fields = ("name",)
+    list_select_related = ("created_by",)
     inlines = (BlockInline,)
-    fieldsets = (
-        (None, {"fields": ("name", "moderators")}),
-        (
-            "Stato e cronologia",
-            {"fields": ("status", "created_by", "created_at", "updated_at", "confirmed_by", "confirmed_at", "duplicated_from")},
-        ),
-    )
-    readonly_fields = (
-        "status",
-        "created_by",
-        "created_at",
-        "updated_at",
-        "confirmed_by",
-        "confirmed_at",
-        "duplicated_from",
-    )
-    actions = ("confirm_selected", "duplicate_selected")
-
-    def get_queryset(self, request):
-        queryset = super().get_queryset(request).annotate(_block_count=Count("blocks", distinct=True))
-        if is_admin_user(request.user):
-            return queryset
-        return queryset.filter(moderators=request.user).distinct()
+    fields = ("name", "created_by", "created_at", "updated_at", "duplicated_from")
+    readonly_fields = ("created_by", "created_at", "updated_at", "duplicated_from")
+    actions = ("duplicate_selected",)
 
     def has_module_permission(self, request):
-        return bool(
-            request.user.is_authenticated
-            and request.user.is_staff
-            and (is_admin_user(request.user) or request.user.role == "moderator")
-        )
+        return is_admin_user(request.user)
 
     def has_view_permission(self, request, obj=None):
-        if not self.has_module_permission(request):
-            return False
-        return obj is None or can_access_template(request.user, obj)
+        return is_admin_user(request.user)
 
     def has_add_permission(self, request):
         return is_admin_user(request.user)
 
     def has_change_permission(self, request, obj=None):
-        if not self.has_module_permission(request):
-            return False
-        if obj is None:
-            return True
-        return can_access_template(request.user, obj) and not obj.is_confirmed
+        return is_admin_user(request.user)
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    def get_readonly_fields(self, request, obj=None):
-        readonly = list(super().get_readonly_fields(request, obj))
-        if not is_admin_user(request.user):
-            readonly.append("moderators")
-        if obj and obj.is_confirmed:
-            readonly.extend(("name", "moderators"))
-        return tuple(dict.fromkeys(readonly))
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_block_count=Count("blocks", distinct=True))
 
     def save_model(self, request, obj, form, change):
         if not change:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
-
-    def formfield_for_manytomany(self, db_field, request, **kwargs):
-        field = super().formfield_for_manytomany(db_field, request, **kwargs)
-        if db_field.name == "moderators":
-            field.queryset = field.queryset.filter(is_active=True, is_superuser=False)
-        return field
 
     @admin.display(description="Blocchi", ordering="_block_count")
     def block_count(self, obj):
         return obj._block_count
 
-    @admin.display(description="Moderatori")
-    def moderator_names(self, obj):
-        return ", ".join(obj.moderators.values_list("username", flat=True)) or "—"
-
-    @admin.action(description="Conferma e blocca i template selezionati", permissions=("change",))
-    def confirm_selected(self, request, queryset):
-        confirmed = 0
-        for template in queryset.filter(status=Template.Status.DRAFT):
-            try:
-                template.confirm(request.user)
-            except ValidationError as error:
-                self.message_user(
-                    request,
-                    f'"{template.name}": {" ".join(error.messages)}',
-                    level=messages.ERROR,
-                )
-            else:
-                confirmed += 1
-        if confirmed:
-            self.message_user(request, f"Confermati {confirmed} template.", level=messages.SUCCESS)
-
     @admin.action(description="Duplica i template selezionati", permissions=("change",))
     def duplicate_selected(self, request, queryset):
-        if not is_admin_user(request.user):
-            self.message_user(request, "Solo un admin può duplicare i template.", level=messages.ERROR)
-            return
         copies = [template.duplicate(request.user) for template in queryset]
-        self.message_user(request, f"Create {len(copies)} copie in bozza.", level=messages.SUCCESS)
-
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        if not is_admin_user(request.user):
-            actions.pop("duplicate_selected", None)
-        return actions
+        self.message_user(request, f"Create {len(copies)} copie.", level=messages.SUCCESS)
 
 
-@admin.register(ShareLink)
-class ShareLinkAdmin(admin.ModelAdmin):
-    list_display = (
-        "name",
-        "template",
-        "is_active",
-        "last_response_update",
-        "created_by",
-        "created_at",
-        "public_link",
-    )
-    list_filter = ("is_active", "template")
-    search_fields = ("name", "template__name")
-    list_editable = ("is_active",)
-    readonly_fields = ("token", "created_by", "created_at", "public_url", "answers_summary")
-    fields = (
-        "template",
-        "name",
-        "is_active",
-        "answers_summary",
-        "token",
-        "public_url",
-        "created_by",
-        "created_at",
-    )
-    change_form_template = "admin/workflows/sharelink/change_form.html"
+@admin.register(Workbook)
+class WorkbookAdmin(admin.ModelAdmin):
+    form = WorkbookCreateForm
+    list_display = ("name", "source_template", "moderator", "status", "created_by")
+    list_filter = ("status", "moderator", "source_template")
+    search_fields = ("name", "source_template__name", "moderator__username")
+    list_select_related = ("source_template", "moderator", "created_by")
+    inlines = (WorkbookBlockInline,)
+    fields = ("name", "source_template", "moderator", "users", "status", "created_by", "created_at", "updated_at", "confirmed_by", "confirmed_at")
+    readonly_fields = ("status", "created_by", "created_at", "updated_at", "confirmed_by", "confirmed_at")
+    actions = ("confirm_selected",)
 
     def get_queryset(self, request):
-        queryset = (
-            super()
-            .get_queryset(request)
-            .select_related("template", "created_by")
-            .annotate(_last_response_update=Max("responses__updated_at"))
-            .prefetch_related("template__blocks__checklist_items", "responses__checked_items")
-        )
-        if is_admin_user(request.user):
-            return queryset
-        return queryset.filter(template__moderators=request.user).distinct()
-
-    def get_fields(self, request, obj=None):
-        fields = list(super().get_fields(request, obj))
-        if obj is None:
-            fields.remove("answers_summary")
-        return fields
+        queryset = super().get_queryset(request)
+        return queryset if is_admin_user(request.user) else queryset.filter(moderator=request.user)
 
     def has_module_permission(self, request):
-        return bool(
-            request.user.is_authenticated
-            and request.user.is_staff
-            and (is_admin_user(request.user) or request.user.role == "moderator")
-        )
+        return request.user.is_authenticated and (is_admin_user(request.user) or request.user.role == "moderator")
 
     def has_view_permission(self, request, obj=None):
-        if not self.has_module_permission(request):
-            return False
-        return obj is None or can_access_template(request.user, obj.template)
-
-    def has_add_permission(self, request):
-        return self.has_module_permission(request)
+        return self.has_module_permission(request) and (obj is None or can_manage_workbook(request.user, obj))
 
     def has_change_permission(self, request, obj=None):
+        # Anche a conferma avvenuta il moderatore gestisce gli utenti collegati.
         return self.has_view_permission(request, obj)
+
+    def has_add_permission(self, request):
+        return is_admin_user(request.user)
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == "template":
-            templates = Template.objects.filter(status=Template.Status.CONFIRMED)
-            if not is_admin_user(request.user):
-                templates = templates.filter(moderators=request.user)
-            kwargs["queryset"] = templates.order_by("name").distinct()
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(self.readonly_fields)
+        if obj:
+            readonly.append("source_template")
+        if not is_admin_user(request.user):
+            readonly.append("moderator")
+            if obj and obj.is_confirmed:
+                readonly.append("name")
+        return tuple(readonly)
+
+    def get_inline_instances(self, request, obj=None):
+        # La creazione copia i blocchi del template; l'editor si usa dopo il salvataggio.
+        return super().get_inline_instances(request, obj) if obj else []
 
     def save_model(self, request, obj, form, change):
-        if not can_access_template(request.user, obj.template):
-            raise ValidationError("Puoi creare link solo per i template assegnati a te.")
         if not change:
             obj.created_by = request.user
-        obj.full_clean()
         super().save_model(request, obj, form, change)
 
-    @admin.display(description="Link pubblico")
-    def public_url(self, obj):
-        if not obj.pk:
-            return "Il link sarà disponibile dopo il salvataggio."
-        path = reverse("public-form", args=(obj.token,))
-        return format_html('<a href="{}" target="_blank" rel="noopener">{}</a>', path, path)
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        form.save_assignments(request.user)
 
-    @admin.display(description="Apri link")
-    def public_link(self, obj):
-        path = reverse("public-form", args=(obj.token,))
-        return format_html('<a href="{}" target="_blank" rel="noopener">Apri compilazione</a>', path)
+    @admin.action(description="Conferma i workbook selezionati", permissions=("change",))
+    def confirm_selected(self, request, queryset):
+        confirmed = 0
+        for workbook in queryset.filter(status=Workbook.Status.DRAFT):
+            try:
+                workbook.confirm(request.user)
+            except ValidationError as error:
+                self.message_user(request, f'"{workbook.name}": {" ".join(error.messages)}', level=messages.ERROR)
+            else:
+                confirmed += 1
+        if confirmed:
+            self.message_user(request, f"Confermati {confirmed} workbook.", level=messages.SUCCESS)
+
+
+@admin.register(WorkbookAssignment)
+class WorkbookAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("user", "workbook", "is_active", "last_response_update", "created_at")
+    list_filter = ("is_active", "workbook")
+    search_fields = ("user__username", "workbook__name")
+    fields = ("workbook", "user", "is_active", "answers_summary", "created_by", "created_at")
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request).select_related("workbook", "user", "created_by").annotate(_last_response_update=Max("responses__updated_at")).prefetch_related("workbook__blocks__checklist_items", "responses__checked_items")
+        return queryset if is_admin_user(request.user) else queryset.filter(workbook__moderator=request.user)
+
+    def has_module_permission(self, request):
+        return request.user.is_authenticated and (is_admin_user(request.user) or request.user.role == "moderator")
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request) and (obj is None or can_manage_workbook(request.user, obj.workbook))
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     @admin.display(description="Ultima risposta", ordering="_last_response_update", empty_value="—")
     def last_response_update(self, obj):
@@ -277,7 +206,7 @@ class ShareLinkAdmin(admin.ModelAdmin):
         responses = {response.block_id: response for response in obj.responses.all()}
         sections = []
 
-        for block in obj.template.blocks.all():
+        for block in obj.workbook.blocks.all():
             if block.kind == Block.Kind.RICH_TEXT:
                 continue
 
@@ -311,10 +240,3 @@ class ShareLinkAdmin(admin.ModelAdmin):
         if not sections:
             return "Questo template non contiene blocchi compilabili."
         return format_html_join("", "{}", ((section,) for section in sections))
-
-    def render_change_form(self, request, context, add=False, change=False, form_url="", obj=None):
-        if obj and obj.pk:
-            context["full_public_url"] = request.build_absolute_uri(
-                reverse("public-form", args=(obj.token,))
-            )
-        return super().render_change_form(request, context, add, change, form_url, obj)
