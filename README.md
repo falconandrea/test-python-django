@@ -14,7 +14,7 @@ I valori predefiniti sono per lo sviluppo locale; `.env.example` elenca le varia
 
 - L'admin crea utenti moderatori dalla sezione **Utenti**. I moderatori accedono allo stesso `/admin/`.
 - L'admin crea un template e assegna uno o più moderatori. Un moderatore vede e modifica solo i template assegnati.
-- I blocchi si aggiungono nella pagina del template. Il campo **Ordine** usa numeri crescenti; per una checklist, inserisci una voce per riga nel campo **Voci checklist**.
+- I blocchi si aggiungono nella pagina del template. Il campo **Ordine** usa numeri crescenti; per una checklist, usa **Aggiungi opzione** e scrivi il Markdown di ogni opzione nel suo campo. I pulsanti su/giù cambiano l’ordine ed **Elimina** rimuove la singola opzione.
 - L'azione **Conferma e blocca i template selezionati** rende immutabile la struttura. **Duplica i template selezionati** crea copie in bozza e mantiene i moderatori assegnati.
 - Da **Risposte** si crea un link nominato per ogni persona: ogni riga rappresenta una persona e la sua compilazione. Aprendo la riga si vedono insieme le risposte, raggruppate per blocco; dalla lista si può chiudere o riattivare il link. Un link chiuso mostra una pagina informativa e non accetta altre modifiche.
 - Chi riceve il link non ha un account: vede il contenuto e può modificare solo checklist e campi di testo. Ogni link conserva la propria compilazione.

@@ -1,0 +1,8 @@
+.checklist-editor { min-width: 320px; max-width: 650px; }
+.checklist-editor[hidden] { display: none; }
+.checklist-editor-option { padding: 12px; margin-bottom: 12px; border: 1px solid var(--hairline-color, #ddd); border-radius: 6px; }
+.checklist-editor-option label { display: block; margin-bottom: 8px; float: none; width: auto; }
+.checklist-editor-option textarea { box-sizing: border-box; width: 100%; min-width: 260px; resize: vertical; }
+.checklist-editor-actions { display: flex; gap: 8px; margin-top: 8px; }
+.checklist-editor button { cursor: pointer; padding: 6px 10px; }
+.checklist-editor button:disabled { cursor: default; opacity: .5; }

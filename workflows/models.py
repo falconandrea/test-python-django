@@ -156,7 +156,7 @@ class ChecklistItem(models.Model):
         related_name="checklist_items",
         on_delete=models.CASCADE,
     )
-    label = models.CharField("voce", max_length=300)
+    label = models.TextField("testo Markdown")
     position = models.PositiveIntegerField("ordine", default=0)
 
     class Meta:

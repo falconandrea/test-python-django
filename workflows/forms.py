@@ -1,8 +1,18 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
+from django.db import transaction
 
 from .models import Block, ChecklistItem
+
+
+class ChecklistOptionsWidget(forms.HiddenInput):
+    is_hidden = False
+    template_name = "workflows/widgets/checklist_options.html"
+
+    class Media:
+        js = ("workflows/checklist-editor.js",)
+        css = {"all": ("workflows/checklist-editor.css",)}
 
 
 class BlockInlineForm(forms.ModelForm):
@@ -17,11 +27,11 @@ class BlockInlineForm(forms.ModelForm):
             }
         ),
     )
-    checklist_lines = forms.CharField(
-        label="Voci checklist",
+    checklist_options = forms.JSONField(
+        label="Opzioni checklist",
         required=False,
-        help_text="Usato solo per i blocchi checklist: inserisci una voce per riga.",
-        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Prima voce\nSeconda voce"}),
+        help_text="Aggiungi un'opzione per ogni checkbox. Ogni testo supporta Markdown e più paragrafi.",
+        widget=ChecklistOptionsWidget,
     )
 
     class Meta:
@@ -41,9 +51,38 @@ class BlockInlineForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk and self.instance.kind == Block.Kind.CHECKLIST:
-            self.fields["checklist_lines"].initial = "\n".join(
-                self.instance.checklist_items.order_by("position").values_list("label", flat=True)
-            )
+            self.fields["checklist_options"].initial = [
+                {"id": item.pk, "text": item.label}
+                for item in self.instance.checklist_items.order_by("position")
+            ]
+
+    def clean_checklist_options(self):
+        options = self.cleaned_data.get("checklist_options") or []
+        if not isinstance(options, list):
+            raise ValidationError("Le opzioni devono essere una lista.")
+        allowed_ids = set(self.instance.checklist_items.values_list("pk", flat=True)) if self.instance.pk else set()
+        seen = set()
+        cleaned = []
+        for option in options:
+            if not isinstance(option, dict) or not isinstance(option.get("text"), str):
+                raise ValidationError("Ogni opzione deve contenere un testo Markdown.")
+            item_id = option.get("id")
+            if item_id is not None:
+                if type(item_id) is not int or item_id not in allowed_ids or item_id in seen:
+                    raise ValidationError("Opzione non valida per questo blocco.")
+                seen.add(item_id)
+            text = option["text"].strip()
+            if not text:
+                raise ValidationError("Scrivi il testo di ogni opzione oppure eliminala.")
+            cleaned.append({"id": item_id, "text": text})
+        return cleaned
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("kind") == Block.Kind.CHECKLIST and not cleaned.get("checklist_options") and "checklist_options" not in self.errors:
+            self.add_error("checklist_options", "Aggiungi almeno un'opzione alla checklist.")
+        return cleaned
+
 
 
 class BlockInlineFormSet(BaseInlineFormSet):
@@ -82,25 +121,25 @@ class BlockInlineFormSet(BaseInlineFormSet):
             positions.add(position)
 
     def save(self, commit=True):
-        saved_instances = super().save(commit=commit)
         if not commit:
+            return super().save(commit=False)
+        with transaction.atomic():
+            saved_instances = super().save(commit=True)
+            for form in self.forms:
+                if not form.cleaned_data or form.cleaned_data.get("DELETE") or not form.has_changed():
+                    continue
+                block = form.instance
+                options = form.cleaned_data.get("checklist_options", []) if block.kind == Block.Kind.CHECKLIST else []
+                retained = [option["id"] for option in options if option["id"] is not None]
+                block.checklist_items.exclude(pk__in=retained).delete()
+                existing = {item.pk: item for item in block.checklist_items.all()}
+                offset = max((item.position for item in existing.values()), default=0) + len(options) + 1
+                for index, item in enumerate(existing.values()):
+                    item.position = offset + index
+                    item.save(update_fields=("position",))
+                for position, option in enumerate(options):
+                    item = existing.get(option["id"]) or ChecklistItem(block=block)
+                    item.label = option["text"]
+                    item.position = position
+                    item.save()
             return saved_instances
-
-        for form in self.forms:
-            if not form.cleaned_data or form.cleaned_data.get("DELETE") or not form.has_changed():
-                continue
-            block = form.instance
-            block.checklist_items.all().delete()
-            if block.kind == Block.Kind.CHECKLIST:
-                labels = [
-                    label.strip()
-                    for label in form.cleaned_data.get("checklist_lines", "").splitlines()
-                    if label.strip()
-                ]
-                ChecklistItem.objects.bulk_create(
-                    [
-                        ChecklistItem(block=block, label=label, position=position)
-                        for position, label in enumerate(labels)
-                    ]
-                )
-        return saved_instances

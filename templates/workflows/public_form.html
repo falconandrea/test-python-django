@@ -21,7 +21,7 @@
             <legend><span class="public-block-title">{{ block.title }}</span>{% if block.required %}<span class="required-mark">Obbligatorio</span>{% endif %}</legend>
             <div class="checklist-options">
               {% for item in block.checklist_items.all %}
-                <label class="checklist-option"><input type="checkbox" name="checklist_{{ block.pk }}" value="{{ item.pk }}" {% if item.pk|stringformat:"s" in row.checked_ids %}checked{% endif %}><span>{{ item.label }}</span></label>
+                <div class="checklist-option"><input id="option_{{ item.pk }}" aria-labelledby="option_content_{{ item.pk }}" type="checkbox" name="checklist_{{ block.pk }}" value="{{ item.pk }}" {% if item.pk|stringformat:"s" in row.checked_ids %}checked{% endif %}><div id="option_content_{{ item.pk }}" class="rich-content checklist-option-content">{{ item.label|markdown }}</div></div>
               {% empty %}<p class="muted">Nessuna voce disponibile.</p>{% endfor %}
             </div>
           </fieldset>

@@ -7,6 +7,7 @@ from django.utils.html import format_html, format_html_join
 
 from .forms import BlockInlineForm, BlockInlineFormSet
 from .models import Block, ShareLink, Template
+from .utils import render_markdown
 
 User = get_user_model()
 
@@ -23,10 +24,13 @@ class BlockInline(admin.TabularInline):
     model = Block
     form = BlockInlineForm
     formset = BlockInlineFormSet
-    fields = ("position", "title", "kind", "content", "checklist_lines", "required")
+    fields = ("position", "title", "kind", "content", "checklist_options", "required")
     ordering = ("position", "pk")
     extra = 1
     show_change_link = False
+
+    def checklist_options(self, obj):
+        return format_html_join("", "<div>{}</div>", ((render_markdown(item.label),) for item in obj.checklist_items.all()))
 
     def has_view_permission(self, request, obj=None):
         return bool(
@@ -284,7 +288,7 @@ class ShareLinkAdmin(admin.ModelAdmin):
                 else:
                     selected_items = response.checked_items.all()
                     if selected_items:
-                        items = format_html_join("", "<li>{}</li>", ((item.label,) for item in selected_items))
+                        items = format_html_join("", "<li>{}</li>", ((render_markdown(item.label),) for item in selected_items))
                         body = format_html("<ul>{}</ul>", items)
                     else:
                         body = format_html("<p>{}</p>", "Nessuna voce selezionata")
